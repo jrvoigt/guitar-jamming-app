@@ -263,15 +263,29 @@ const PROGS = {
   'I-V-vi-IV': { offsets:[0,7,9,5],                  quality:['M','M','m','M']   },
 };
 
-// Karplus-Strong plucked string synthesis
-function karplusBuffer(ctx, freq, duration = 1.2, decay = 0.996) {
+// Soft-clip waveshaper — warms up bass and guitar without harsh distortion
+function softClipCurve(amount = 40) {
+  const n = 256, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+// Karplus-Strong with Hann-windowed excitation and frequency-tuned decay
+function karplusBuffer(ctx, freq, duration = 1.5) {
   const sr = ctx.sampleRate;
   const N = Math.max(2, Math.round(sr / freq));
+  const decay = freq < 300 ? 0.9984 : 0.9978; // lower strings sustain longer
   const len = Math.floor(sr * duration);
   const buf = ctx.createBuffer(1, len, sr);
   const out = buf.getChannelData(0);
   const ring = new Float32Array(N);
-  for (let i = 0; i < N; i++) ring[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < N; i++) {
+    const win = 0.5 * (1 - Math.cos(2 * Math.PI * i / N)); // Hann window
+    ring[i] = (Math.random() * 2 - 1) * win;
+  }
   let pos = 0;
   for (let i = 0; i < len; i++) {
     out[i] = ring[pos];
@@ -286,6 +300,8 @@ class BackingTrack {
   constructor() {
     this.ctx = null;
     this.noiseBuf = null;
+    this.master = null;    // compressor → destination
+    this.reverbIn = null;  // guitar reverb send
     this.bpm = 120;
     this.groove = 'rock';
     this.key = 'E';
@@ -303,8 +319,29 @@ class BackingTrack {
   _ctx() {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const size = this.ctx.sampleRate * 2;
-      this.noiseBuf = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+      const ctx = this.ctx;
+
+      // Master compressor — glues the mix and adds punch
+      this.master = ctx.createDynamicsCompressor();
+      this.master.threshold.value = -10;
+      this.master.knee.value = 8;
+      this.master.ratio.value = 4;
+      this.master.attack.value = 0.003;
+      this.master.release.value = 0.2;
+      this.master.connect(ctx.destination);
+
+      // Guitar reverb: feedback delay loop → warm room tail
+      const delay = ctx.createDelay(0.5);
+      delay.delayTime.value = 0.065;
+      const fb = ctx.createGain(); fb.gain.value = 0.42;
+      const wet = ctx.createGain(); wet.gain.value = 0.22;
+      delay.connect(fb); fb.connect(delay);
+      delay.connect(wet); wet.connect(this.master);
+      this.reverbIn = delay;
+
+      // Noise buffer (2 s) shared by all drum voices
+      const size = ctx.sampleRate * 2;
+      this.noiseBuf = ctx.createBuffer(1, size, ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < size; i++) d[i] = Math.random() * 2 - 1;
     }
@@ -312,56 +349,109 @@ class BackingTrack {
   }
 
   _kick(t) {
-    const ctx = this._ctx();
-    const osc = ctx.createOscillator(), g = ctx.createGain();
-    osc.connect(g); g.connect(ctx.destination);
-    osc.frequency.setValueAtTime(140, t);
-    osc.frequency.exponentialRampToValueAtTime(0.001, t + 0.35);
-    g.gain.setValueAtTime(this.drumVol, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    osc.start(t); osc.stop(t + 0.35);
+    const ctx = this._ctx(), v = this.drumVol;
+
+    // Deep sub sweep: 180 → 35 Hz over 500 ms
+    const sub = ctx.createOscillator(), subG = ctx.createGain();
+    sub.frequency.setValueAtTime(180, t);
+    sub.frequency.exponentialRampToValueAtTime(35, t + 0.5);
+    subG.gain.setValueAtTime(v * 1.4, t);
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    sub.connect(subG); subG.connect(this.master);
+    sub.start(t); sub.stop(t + 0.5);
+
+    // Short punch thump for mid-range body
+    const punch = ctx.createOscillator(), punchG = ctx.createGain();
+    punch.frequency.setValueAtTime(120, t);
+    punch.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+    punchG.gain.setValueAtTime(v * 0.9, t);
+    punchG.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    punch.connect(punchG); punchG.connect(this.master);
+    punch.start(t); punch.stop(t + 0.12);
+
+    // Click transient: noise burst defines the attack
+    const click = ctx.createBufferSource(), clickF = ctx.createBiquadFilter(), clickG = ctx.createGain();
+    click.buffer = this.noiseBuf;
+    clickF.type = 'bandpass'; clickF.frequency.value = 1200; clickF.Q.value = 0.7;
+    clickG.gain.setValueAtTime(v * 0.6, t);
+    clickG.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+    click.connect(clickF); clickF.connect(clickG); clickG.connect(this.master);
+    click.start(t); click.stop(t + 0.018);
   }
 
   _snare(t) {
-    const ctx = this._ctx();
-    const noise = ctx.createBufferSource();
-    noise.buffer = this.noiseBuf;
-    const filt = ctx.createBiquadFilter(), ng = ctx.createGain();
-    filt.type = 'bandpass'; filt.frequency.value = 250; filt.Q.value = 0.8;
-    noise.connect(filt); filt.connect(ng); ng.connect(ctx.destination);
-    ng.gain.setValueAtTime(this.drumVol * 0.6, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-    noise.start(t); noise.stop(t + 0.18);
-    const osc = ctx.createOscillator(), og = ctx.createGain();
-    osc.type = 'triangle'; osc.frequency.value = 180;
-    osc.connect(og); og.connect(ctx.destination);
-    og.gain.setValueAtTime(this.drumVol * 0.25, t);
-    og.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    osc.start(t); osc.stop(t + 0.08);
+    const ctx = this._ctx(), v = this.drumVol;
+
+    // Body: low-mid bandpass noise
+    const body = ctx.createBufferSource(), bodyF = ctx.createBiquadFilter(), bodyG = ctx.createGain();
+    body.buffer = this.noiseBuf;
+    bodyF.type = 'bandpass'; bodyF.frequency.value = 180; bodyF.Q.value = 0.6;
+    bodyG.gain.setValueAtTime(v * 0.9, t);
+    bodyG.gain.setValueAtTime(v * 0.4, t + 0.04);
+    bodyG.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    body.connect(bodyF); bodyF.connect(bodyG); bodyG.connect(this.master);
+    body.start(t); body.stop(t + 0.22);
+
+    // Snare buzz: high-pass sizzle
+    const buzz = ctx.createBufferSource(), buzzF = ctx.createBiquadFilter(), buzzG = ctx.createGain();
+    buzz.buffer = this.noiseBuf;
+    buzzF.type = 'highpass'; buzzF.frequency.value = 3000;
+    buzzG.gain.setValueAtTime(v * 0.5, t);
+    buzzG.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    buzz.connect(buzzF); buzzF.connect(buzzG); buzzG.connect(this.master);
+    buzz.start(t); buzz.stop(t + 0.12);
+
+    // Crack tone: swept triangle
+    const tone = ctx.createOscillator(), toneG = ctx.createGain();
+    tone.type = 'triangle';
+    tone.frequency.setValueAtTime(220, t);
+    tone.frequency.exponentialRampToValueAtTime(160, t + 0.06);
+    toneG.gain.setValueAtTime(v * 0.55, t);
+    toneG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    tone.connect(toneG); toneG.connect(this.master);
+    tone.start(t); tone.stop(t + 0.1);
   }
 
   _hihat(t) {
     const ctx = this._ctx();
-    const noise = ctx.createBufferSource();
+    const noise = ctx.createBufferSource(), hpf = ctx.createBiquadFilter(),
+          peak = ctx.createBiquadFilter(), g = ctx.createGain();
     noise.buffer = this.noiseBuf;
-    const filt = ctx.createBiquadFilter(), g = ctx.createGain();
-    filt.type = 'highpass'; filt.frequency.value = 8000;
-    noise.connect(filt); filt.connect(g); g.connect(ctx.destination);
-    g.gain.setValueAtTime(this.drumVol * 0.2, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    noise.start(t); noise.stop(t + 0.05);
+    hpf.type = 'highpass'; hpf.frequency.value = 6000;
+    peak.type = 'peaking'; peak.frequency.value = 10000; peak.gain.value = 8;
+    g.gain.setValueAtTime(this.drumVol * 0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    noise.connect(hpf); hpf.connect(peak); peak.connect(g); g.connect(this.master);
+    noise.start(t); noise.stop(t + 0.08);
   }
 
   _bass(t, freq, dur) {
-    const ctx = this._ctx();
-    const osc = ctx.createOscillator(), filt = ctx.createBiquadFilter(), g = ctx.createGain();
-    osc.type = 'sawtooth'; osc.frequency.value = freq;
-    filt.type = 'lowpass'; filt.frequency.value = 350;
-    osc.connect(filt); filt.connect(g); g.connect(ctx.destination);
-    g.gain.setValueAtTime(this.bassVol * 0.9, t);
-    g.gain.setValueAtTime(this.bassVol * 0.5, t + dur * 0.6);
+    const ctx = this._ctx(), v = this.bassVol;
+
+    // Sine fundamental: clean sub
+    const sine = ctx.createOscillator();
+    sine.type = 'sine';
+    sine.frequency.setValueAtTime(freq * 1.004, t); // slight detune → pluck transient
+    sine.frequency.exponentialRampToValueAtTime(freq, t + 0.04);
+
+    // Triangle harmonic: one octave up adds warmth
+    const harm = ctx.createOscillator(), harmG = ctx.createGain();
+    harm.type = 'triangle'; harm.frequency.value = freq * 2;
+    harmG.gain.value = 0.28;
+
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = softClipCurve(30);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(v, t);
+    g.gain.setValueAtTime(v * 0.75, t + 0.06);
+    g.gain.setValueAtTime(v * 0.55, t + dur * 0.5);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    osc.start(t); osc.stop(t + dur);
+
+    sine.connect(g); harm.connect(harmG); harmG.connect(g);
+    g.connect(shaper); shaper.connect(this.master);
+    sine.start(t); sine.stop(t + dur);
+    harm.start(t); harm.stop(t + dur);
   }
 
   _chord(t, freq, quality, down = true) {
@@ -377,14 +467,14 @@ class BackingTrack {
     if (quality === '7') freqs.push(freq * 4 * Math.pow(2, 10 / 12));
     if (!down) freqs.reverse();
     freqs.forEach((f, i) => {
-      const buf = karplusBuffer(ctx, f, 1.2);
-      const src = ctx.createBufferSource();
-      const g = ctx.createGain();
+      const buf = karplusBuffer(ctx, f, 1.5);
+      const src = ctx.createBufferSource(), g = ctx.createGain();
       src.buffer = buf;
+      g.gain.value = this.chordVol * Math.pow(0.85, i);
       src.connect(g);
-      g.connect(ctx.destination);
-      g.gain.value = this.chordVol * Math.pow(0.88, i);
-      src.start(t + i * 0.011);
+      g.connect(this.master);   // dry
+      g.connect(this.reverbIn); // reverb send → warm tail
+      src.start(t + i * 0.012);
     });
   }
 
