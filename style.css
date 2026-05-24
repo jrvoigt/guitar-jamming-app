@@ -292,6 +292,15 @@ main {
   color: var(--accent);
 }
 
+/* ── Time signature row ── */
+
+.timesig-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
 /* ── Beat indicator ── */
 
 .beat-row {

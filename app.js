@@ -31,45 +31,48 @@ const VOICINGS = {
   'B-m':   { frets:[-1,2,4,4,3,2], barre:{fret:2,from:1,to:5} },
 };
 
-// 8 eighth-note slots per bar.
-// swing: amount applied when shuffleOn is true
-// bass: [{step, note (semitones above root), vol? (0‑1 multiplier)}]
-// shuffleOn: current on/off state toggled by the UI
+// ── Grooves (16 sixteenth-note slots per bar) ─────────────────
+//
+// swing: 0–1.  When shuffleOn is true, the ratio r = 0.5 + swing*0.167
+//   controls the long/short 8th split within every beat.
+//   r=0.5 → straight; r=0.667 → full triplet (swing=1.0).
+//   The quarter-note duration is ALWAYS preserved — the beat never slows down.
+//
+// bass: [{step (0-15), note (semitones above root), vol? (0-1)}]
+// guitar: 16 slots — 1=strum, 0=rest.  Alternating pan per strum.
+
 const GROOVES = {
   rock: {
-    kick:   [1,0,0,0,1,0,0,0],
-    snare:  [0,0,1,0,0,0,1,0],
-    hihat:  [1,1,1,1,1,1,1,1],
-    bass:   [{step:0,note:0},{step:4,note:7}],
-    guitar: [1,0,0,0,1,0,0,0],
-    swing: 0.33, chordDur: 1.4, shuffleOn: false,
+    kick:   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],  // beats 1 & 3
+    snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
+    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // 8th-note hihats
+    bass:   [{step:0,note:0},{step:8,note:7}],
+    guitar: [1,0,0,0,1,0,1,0,0,0,1,0,1,0,1,0],  // D _ D U _ U D U
+    swing: 0.6, chordDur: 0.5, shuffleOn: false,
   },
   jazz: {
-    kick:   [1,0,0,0,0,0,1,0],
-    snare:  [0,0,0,0,1,0,0,0],
-    hihat:  [1,0,1,0,1,0,1,0],
-    // walking bass: root → 3rd → 5th → 7th each beat
-    bass:   [{step:0,note:0},{step:2,note:4},{step:4,note:7},{step:6,note:10}],
-    guitar: [0,0,1,0,0,0,1,0],  // comp on beats 2 and 4
-    swing: 0.33, chordDur: 0.8, shuffleOn: true,
+    kick:   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],  // beat 1
+    snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
+    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // ride (8th, swung)
+    bass:   [{step:0,note:0},{step:4,note:4},{step:8,note:7},{step:12,note:10}],
+    guitar: [0,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0],  // comp on 2 & 4 w/ embellish
+    swing: 1.0, chordDur: 0.5, shuffleOn: true,
   },
   blues: {
-    kick:   [1,0,0,0,0,0,1,0],
-    snare:  [0,0,1,0,0,0,1,0],
-    hihat:  [1,0,1,0,1,0,1,0],
-    // classic blues bass: root – 5th – root – 6th
-    bass:   [{step:0,note:0},{step:2,note:7},{step:4,note:0},{step:6,note:9}],
-    guitar: [1,0,0,0,0,0,0,0],
-    swing: 0.38, chordDur: 3.0, shuffleOn: true,
+    kick:   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],  // beats 1 & 3
+    snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
+    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // 8th-note (swung)
+    bass:   [{step:0,note:0},{step:4,note:7},{step:8,note:0},{step:12,note:9}],
+    guitar: [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],  // one slow strum per bar
+    swing: 0.9, chordDur: 3.5, shuffleOn: true,
   },
   funk: {
-    kick:   [1,0,0,1,1,0,0,0],
-    snare:  [0,0,1,0,0,0,1,1],
-    hihat:  [1,1,1,1,1,1,1,1],
-    // syncopated funk bass with ghost note (step 1, low vol)
-    bass:   [{step:0,note:0},{step:1,note:0,vol:0.45},{step:3,note:7},{step:5,note:0}],
-    guitar: [1,0,0,1,0,1,0,0],
-    swing: 0.25, chordDur: 0.28, shuffleOn: false,
+    kick:   [1,0,0,1,0,0,1,0,0,0,1,0,0,1,0,0],  // syncopated
+    snare:  [0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,1],  // 2 & 4 + ghost notes
+    hihat:  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],  // all 16ths (tight)
+    bass:   [{step:0,note:0},{step:2,note:0,vol:0.45},{step:6,note:7},{step:10,note:0}],
+    guitar: [1,1,0,1,0,0,1,1,0,1,0,0,1,1,0,0],  // 16th funk strum
+    swing: 0.4, chordDur: 0.18, shuffleOn: false,
   },
 };
 
@@ -228,14 +231,18 @@ function bass(t, freq, vol, dur) {
   tri.start(t);  tri.stop(t + dur);
 }
 
-// ── Karplus-Strong guitar chord (pre-computed) ────────────────
-// Computes the string synthesis in JS, stores result in an AudioBuffer,
-// then plays it back. Avoids unreliable Web Audio feedback-loop quirks.
+// ── Karplus-Strong guitar (pre-computed) ──────────────────────
+// KS computed entirely in JS then played as an AudioBuffer.
+// dir: 1=down-strum (low→high strings), -1=up-strum (high→low).
 
-function ksChord(t, rootFreq, quality, dur, pan, vol) {
+function ksChord(t, rootFreq, quality, dur, pan, vol, dir) {
   const semitones = quality === 'm' ? [0, 3, 7, 12, 15]
     : quality === '7'               ? [0, 4, 7, 10, 12]
     :                                 [0, 4, 7, 12, 16];
+
+  // Up-strums: reverse string order (high strings first) and reduce volume slightly
+  const order = dir === -1 ? [...semitones].reverse() : semitones;
+  const volMul = dir === -1 ? 0.75 : 1.0;
 
   const panner = ctx.createStereoPanner();
   panner.pan.value = pan;
@@ -245,23 +252,18 @@ function ksChord(t, rootFreq, quality, dur, pan, vol) {
     panner.connect(rg); rg.connect(reverbBus);
   }
 
-  const sr = ctx.sampleRate;
-  // decay < 1 controls how fast the string dies; 0.997 ≈ guitar sustain
+  const sr    = ctx.sampleRate;
   const decay = 0.997;
 
-  semitones.forEach((semi, idx) => {
-    const freq   = rootFreq * Math.pow(2, semi / 12);
-    const strum  = t + idx * 0.013;
-    const period = Math.max(2, Math.round(sr / freq));
-    // compute just enough samples to cover the chord duration
+  order.forEach((semi, idx) => {
+    const freq    = rootFreq * Math.pow(2, semi / 12);
+    const strum   = t + idx * 0.010;
+    const period  = Math.max(2, Math.round(sr / freq));
     const totalLen = Math.min(Math.ceil(sr * (dur + 0.4)), sr * 4);
 
-    const buf  = ctx.createBuffer(1, totalLen, sr);
-    const d    = buf.getChannelData(0);
-
-    // fill first period with noise (the "pluck")
+    const buf = ctx.createBuffer(1, totalLen, sr);
+    const d   = buf.getChannelData(0);
     for (let i = 0; i < period; i++) d[i] = Math.random() * 2 - 1;
-    // KS recursion: average consecutive delayed samples
     for (let i = period; i < totalLen; i++) {
       d[i] = decay * 0.5 * (d[i - period] + d[i - period + 1]);
     }
@@ -269,7 +271,7 @@ function ksChord(t, rootFreq, quality, dur, pan, vol) {
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const g = ctx.createGain();
-    g.gain.value = vol * 0.22;
+    g.gain.value = vol * 0.22 * volMul;
     src.connect(g); g.connect(panner);
     src.start(strum);
     src.stop(strum + dur + 0.4);
@@ -280,29 +282,32 @@ function ksChord(t, rootFreq, quality, dur, pan, vol) {
 
 class BackingTrack {
   constructor() {
-    this.playing  = false;
-    this.bpm      = 120;
-    this.groove   = 'rock';
-    this.key      = 'E';
-    this.prog     = 'I-IV-V';
-    this.drumVol  = 0.8;
-    this.bassVol  = 0.6;
-    this.chordVol = 0.5;
-    this._nextTime = 0;
-    this._step     = 0;
-    this._barStep  = 0;
-    this._rafId    = null;
-    this.onBeat    = null;
-    this.onBar     = null;
+    this.playing     = false;
+    this.bpm         = 120;
+    this.timeSig     = 4;       // beats per bar (2, 3, or 4)
+    this.groove      = 'rock';
+    this.key         = 'E';
+    this.prog        = 'I-IV-V';
+    this.drumVol     = 0.8;
+    this.bassVol     = 0.6;
+    this.chordVol    = 0.5;
+    this._nextTime   = 0;
+    this._step       = 0;
+    this._barStep    = 0;
+    this._strumCount = 0;       // alternates down/up strokes
+    this._rafId      = null;
+    this.onBeat      = null;
+    this.onBar       = null;
   }
 
   start() {
     getCtx();
     if (ctx.state === 'suspended') ctx.resume();
-    this.playing   = true;
-    this._step     = 0;
-    this._barStep  = 0;
-    this._nextTime = ctx.currentTime + 0.05;
+    this.playing     = true;
+    this._step       = 0;
+    this._barStep    = 0;
+    this._strumCount = 0;
+    this._nextTime   = ctx.currentTime + 0.05;
     this._tick();
   }
 
@@ -319,19 +324,21 @@ class BackingTrack {
     this._rafId = requestAnimationFrame(() => this._tick());
   }
 
-  _eighth() { return 60 / this.bpm / 2; }
-
   _scheduleStep() {
     const t    = this._nextTime;
     const step = this._step;
     const g    = GROOVES[this.groove];
 
-    // swing: odd steps stretched — only when the groove's shuffle is on
-    const base = this._eighth();
-    const activeSwing = g.shuffleOn ? g.swing : 0;
-    const dur  = (step % 2 === 1 && activeSwing > 0) ? base * (1 + activeSwing) : base;
+    // ── Swing timing ─────────────────────────────────────────
+    // Within each quarter note (4 sixteenth-note steps), the first two
+    // sixteenth notes form the downbeat 8th and the last two form the
+    // upbeat 8th.  With swing, the downbeat 8th gets r of the quarter,
+    // the upbeat 8th gets (1-r).  Total always = Q (beat never slows down).
+    const Q   = 60 / this.bpm;               // quarter-note duration (seconds)
+    const r   = g.shuffleOn ? 0.5 + g.swing * 0.167 : 0.5;
+    const dur = (step % 4 < 2) ? Q * r / 2 : Q * (1 - r) / 2;
 
-    // Chord lookup
+    // ── Chord lookup ──────────────────────────────────────────
     const prog     = PROGS[this.prog];
     const chordIdx = this._barStep % prog.offsets.length;
     const keyIdx   = NOTES.indexOf(this.key);
@@ -340,30 +347,34 @@ class BackingTrack {
     const quality  = prog.quality[chordIdx];
     const rootFreq = 440 * Math.pow(2, (noteIdx - 9) / 12) * 0.5;
 
-    // Drums
+    // ── Drums ─────────────────────────────────────────────────
     if (g.kick[step])  kick(t, this.drumVol);
     if (g.snare[step]) snare(t, this.drumVol * 0.85);
     if (g.hihat[step]) hihat(t, this.drumVol * 0.5);
 
-    // Bass arpeggio — each groove defines its own note pattern
+    // ── Bass arpeggio ─────────────────────────────────────────
+    // Fixed note duration = ~90% of a quarter note, consistent regardless of swing
+    const bassDur = Q * 0.9;
     g.bass.filter(b => b.step === step).forEach(b => {
       let semi = b.note;
-      // adjust 3rd for chord quality (minor 3rd = 3 semitones, major = 4)
-      if (semi === 4 && quality === 'm') semi = 3;
+      if (semi === 4 && quality === 'm') semi = 3; // minor 3rd
       const bFreq = rootFreq * 0.5 * Math.pow(2, semi / 12);
-      bass(t, bFreq, this.bassVol * 0.9 * (b.vol || 1), dur * 2.2);
+      bass(t, bFreq, this.bassVol * 0.9 * (b.vol || 1), bassDur);
     });
 
-    // Guitar chord
+    // ── Guitar strumming ──────────────────────────────────────
     if (g.guitar[step]) {
-      const pan = step < 4 ? -0.2 : 0.2;
-      ksChord(t, rootFreq, quality === '7' ? '7' : quality, g.chordDur, pan, this.chordVol);
+      // Alternate down/up strokes; pan alternates slightly L/R
+      const dir = this._strumCount % 2 === 0 ? 1 : -1;
+      const pan = dir === 1 ? -0.18 : 0.18;
+      ksChord(t, rootFreq, quality === '7' ? '7' : quality, g.chordDur, pan, this.chordVol, dir);
+      this._strumCount++;
     }
 
-    // UI callbacks (schedule via setTimeout to sync with audio)
-    if (step % 2 === 0 && this.onBeat) {
+    // ── UI callbacks ──────────────────────────────────────────
+    if (step % 4 === 0 && this.onBeat) {
       const delay = Math.max(0, (t - ctx.currentTime) * 1000);
-      setTimeout(() => this.onBeat(step / 2), delay);
+      setTimeout(() => this.onBeat(step / 4), delay);
     }
     if (step === 0 && this.onBar) {
       const label = noteName + (quality === 'm' ? 'm' : quality === '7' ? '7' : '');
@@ -371,8 +382,10 @@ class BackingTrack {
       setTimeout(() => this.onBar(label, chordIdx), delay);
     }
 
+    // ── Advance ───────────────────────────────────────────────
     this._nextTime += dur;
-    this._step = (this._step + 1) % 8;
+    const stepsPerBar = this.timeSig * 4;
+    this._step = (this._step + 1) % stepsPerBar;
     if (this._step === 0) {
       this._barStep = (this._barStep + 1) % prog.offsets.length;
     }
@@ -470,7 +483,7 @@ function highlightChord(label) {
 function buildBeatDots() {
   const row = document.getElementById('beat-row');
   row.innerHTML = '';
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < bt.timeSig; i++) {
     const dot = document.createElement('div');
     dot.className = 'beat-dot' + (i === 0 ? ' accent' : '');
     dot.id = `dot-${i}`;
@@ -525,7 +538,18 @@ document.getElementById('prog-select').addEventListener('change', e => {
   updateChordDisplay();
 });
 
-// Shuffle toggles (one per style — stored on the GROOVES object directly)
+// Time signature
+document.querySelectorAll('#timesig-ctrl .seg').forEach(btn =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#timesig-ctrl .seg').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    bt.timeSig = +btn.dataset.timesig;
+    bt._step   = 0;
+    buildBeatDots();
+  })
+);
+
+// Shuffle toggles
 document.querySelectorAll('.shuffle-toggle').forEach(btn =>
   btn.addEventListener('click', () => {
     const groove = btn.dataset.groove;
