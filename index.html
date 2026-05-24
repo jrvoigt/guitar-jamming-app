@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guitar Jamming App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>Guitar Jamming</h1>
+      <nav class="tabs">
+        <button class="tab active" data-tab="chords">Chords</button>
+        <button class="tab" data-tab="metronome">Metronome</button>
+        <button class="tab" data-tab="backing">Backing</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="chords" class="panel active">
+      <div class="filter-bar">
+        <button class="filter active" data-filter="all">All</button>
+        <button class="filter" data-filter="major">Major</button>
+        <button class="filter" data-filter="minor">Minor</button>
+      </div>
+      <div id="chord-grid" class="chord-grid"></div>
+    </section>
+
+    <section id="metronome" class="panel">
+      <div class="metro-wrap">
+        <div class="bpm-display">
+          <span id="bpm-number">120</span>
+          <span class="bpm-unit">BPM</span>
+        </div>
+
+        <input class="bpm-slider" type="range" id="bpm-slider" min="40" max="240" value="120">
+
+        <div class="beat-row" id="beat-row"></div>
+
+        <div class="metro-buttons">
+          <button class="btn-secondary" id="tap-btn">Tap Tempo</button>
+          <button class="btn-primary" id="start-btn">Start</button>
+        </div>
+
+        <div class="time-sig-row">
+          <span>Time signature</span>
+          <div class="seg-control" id="time-sig">
+            <button class="seg active" data-beats="4">4/4</button>
+            <button class="seg" data-beats="3">3/4</button>
+            <button class="seg" data-beats="2">2/4</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section id="backing" class="panel">
+      <div class="backing-wrap">
+
+        <div class="control-group">
+          <div class="ctrl-label">Groove</div>
+          <div class="seg-control" id="bt-groove">
+            <button class="seg active" data-groove="rock">Rock</button>
+            <button class="seg" data-groove="blues">Blues</button>
+            <button class="seg" data-groove="reggae">Reggae</button>
+            <button class="seg" data-groove="funk">Funk</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="ctrl-label">Progression</div>
+          <div class="seg-control" id="bt-prog">
+            <button class="seg active" data-prog="I-IV-V">I–IV–V</button>
+            <button class="seg" data-prog="12-bar">12-bar blues</button>
+            <button class="seg" data-prog="I-V-vi-IV">I–V–vi–IV</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="ctrl-label">Key</div>
+          <select class="key-select" id="bt-key">
+            <option>C</option><option>C#</option><option>D</option>
+            <option>D#</option><option selected>E</option><option>F</option>
+            <option>F#</option><option>G</option><option>G#</option>
+            <option>A</option><option>A#</option><option>B</option>
+          </select>
+        </div>
+
+        <div class="chord-now" id="bt-chord-now">—</div>
+
+        <div class="bpm-display">
+          <span id="bt-bpm-number">120</span>
+          <span class="bpm-unit">BPM</span>
+        </div>
+        <input class="bpm-slider" type="range" id="bt-bpm-slider" min="40" max="200" value="120">
+
+        <div class="vol-row">
+          <span>Drums</span>
+          <input type="range" class="vol-slider" id="drum-vol" min="0" max="1" step="0.01" value="0.8">
+          <span>Bass</span>
+          <input type="range" class="vol-slider" id="bass-vol" min="0" max="1" step="0.01" value="0.6">
+          <span>Guitar</span>
+          <input type="range" class="vol-slider" id="chord-vol" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <button class="btn-primary" id="bt-play-btn">Play</button>
+
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
