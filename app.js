@@ -250,18 +250,37 @@ function chordLabel(key, semitones) {
 
 // 8 steps per bar (8th notes). swing delays odd steps for shuffle feel.
 const GROOVES = {
-  rock:   { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0    },
-  blues:  { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0.33 },
-  reggae: { kick:[1,0,0,0,0,0,0,0], snare:[0,0,0,0,1,0,0,0], hihat:[0,1,0,1,0,1,0,1], swing:0    },
-  funk:   { kick:[1,1,0,0,1,0,0,1], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0    },
+  rock:   { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], guitar:[1,0,0,0,1,0,0,0], swing:0    },
+  blues:  { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], guitar:[1,0,0,0,0,0,0,0], swing:0.33 },
+  reggae: { kick:[1,0,0,0,0,0,0,0], snare:[0,0,0,0,1,0,0,0], hihat:[0,1,0,1,0,1,0,1], guitar:[0,1,0,0,0,1,0,0], swing:0    },
+  funk:   { kick:[1,1,0,0,1,0,0,1], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], guitar:[1,0,0,1,0,1,0,0], swing:0    },
 };
 
-// Semitone offsets for each bar in the loop
+// offsets = semitones from key per bar; quality: M=major m=minor 7=dominant7
 const PROGS = {
-  'I-IV-V':    [0, 5, 7, 7],
-  '12-bar':    [0,0,0,0, 5,5,0,0, 7,5,0,0],
-  'I-V-vi-IV': [0, 7, 9, 5],
+  'I-IV-V':    { offsets:[0,5,7,7],                  quality:['M','M','M','M']   },
+  '12-bar':    { offsets:[0,0,0,0,5,5,0,0,7,5,0,0],  quality:Array(12).fill('7') },
+  'I-V-vi-IV': { offsets:[0,7,9,5],                  quality:['M','M','m','M']   },
 };
+
+// Karplus-Strong plucked string synthesis
+function karplusBuffer(ctx, freq, duration = 1.2, decay = 0.996) {
+  const sr = ctx.sampleRate;
+  const N = Math.max(2, Math.round(sr / freq));
+  const len = Math.floor(sr * duration);
+  const buf = ctx.createBuffer(1, len, sr);
+  const out = buf.getChannelData(0);
+  const ring = new Float32Array(N);
+  for (let i = 0; i < N; i++) ring[i] = Math.random() * 2 - 1;
+  let pos = 0;
+  for (let i = 0; i < len; i++) {
+    out[i] = ring[pos];
+    const nxt = pos + 1 < N ? pos + 1 : 0;
+    ring[pos] = decay * 0.5 * (ring[pos] + ring[nxt]);
+    pos = nxt;
+  }
+  return buf;
+}
 
 class BackingTrack {
   constructor() {
@@ -273,6 +292,7 @@ class BackingTrack {
     this.prog = 'I-IV-V';
     this.drumVol = 0.8;
     this.bassVol = 0.6;
+    this.chordVol = 0.5;
     this.isRunning = false;
     this.step = 0;
     this.nextStepTime = 0;
@@ -344,6 +364,30 @@ class BackingTrack {
     osc.start(t); osc.stop(t + dur);
   }
 
+  _chord(t, freq, quality, down = true) {
+    const ctx = this._ctx();
+    const third = quality === 'm' ? 3 : 4;
+    const freqs = [
+      freq * 2,
+      freq * 2 * Math.pow(2, 7 / 12),
+      freq * 4,
+      freq * 4 * Math.pow(2, third / 12),
+      freq * 4 * Math.pow(2, 7 / 12),
+    ];
+    if (quality === '7') freqs.push(freq * 4 * Math.pow(2, 10 / 12));
+    if (!down) freqs.reverse();
+    freqs.forEach((f, i) => {
+      const buf = karplusBuffer(ctx, f, 1.2);
+      const src = ctx.createBufferSource();
+      const g = ctx.createGain();
+      src.buffer = buf;
+      src.connect(g);
+      g.connect(ctx.destination);
+      g.gain.value = this.chordVol * Math.pow(0.88, i);
+      src.start(t + i * 0.011);
+    });
+  }
+
   _schedule() {
     const ctx = this._ctx();
     const stepDur = 60 / this.bpm / 2;
@@ -353,12 +397,14 @@ class BackingTrack {
     while (this.nextStepTime < ctx.currentTime + 0.12) {
       const barStep = this.step % 8;
       const bar = Math.floor(this.step / 8);
-      const semitones = prog[bar % prog.length];
+      const semitones = prog.offsets[bar % prog.offsets.length];
+      const quality  = prog.quality[bar % prog.quality.length];
       const t = this.nextStepTime + (barStep % 2 === 1 ? groove.swing * stepDur : 0);
 
-      if (groove.kick[barStep])  this._kick(t);
-      if (groove.snare[barStep]) this._snare(t);
-      if (groove.hihat[barStep]) this._hihat(t);
+      if (groove.kick[barStep])   this._kick(t);
+      if (groove.snare[barStep])  this._snare(t);
+      if (groove.hihat[barStep])  this._hihat(t);
+      if (groove.guitar[barStep]) this._chord(t, rootFreq(this.key, semitones), quality, barStep % 2 === 0);
 
       if (barStep === 0) {
         this._bass(t, rootFreq(this.key, semitones), stepDur * 7.5);
@@ -425,6 +471,7 @@ btBpmSlider.addEventListener('input', () => {
 
 document.getElementById('drum-vol').addEventListener('input', e => { bt.drumVol = +e.target.value; });
 document.getElementById('bass-vol').addEventListener('input', e => { bt.bassVol = +e.target.value; });
+document.getElementById('chord-vol').addEventListener('input', e => { bt.chordVol = +e.target.value; });
 
 const btPlayBtn = document.getElementById('bt-play-btn');
 btPlayBtn.addEventListener('click', () => {
