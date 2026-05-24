@@ -236,6 +236,204 @@ document.querySelectorAll('.seg').forEach(seg => {
   });
 });
 
+// ── Backing track ─────────────────────────────────────────────────────────────
+
+const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const BASE_FREQ = [65.41,69.30,73.42,77.78,82.41,87.31,92.50,98.00,103.83,110.00,116.54,123.47];
+
+function rootFreq(key, semitones) {
+  return BASE_FREQ[(NOTES.indexOf(key) + semitones) % 12];
+}
+function chordLabel(key, semitones) {
+  return NOTES[(NOTES.indexOf(key) + semitones) % 12];
+}
+
+// 8 steps per bar (8th notes). swing delays odd steps for shuffle feel.
+const GROOVES = {
+  rock:   { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0    },
+  blues:  { kick:[1,0,0,0,1,0,0,0], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0.33 },
+  reggae: { kick:[1,0,0,0,0,0,0,0], snare:[0,0,0,0,1,0,0,0], hihat:[0,1,0,1,0,1,0,1], swing:0    },
+  funk:   { kick:[1,1,0,0,1,0,0,1], snare:[0,0,1,0,0,0,1,0], hihat:[1,1,1,1,1,1,1,1], swing:0    },
+};
+
+// Semitone offsets for each bar in the loop
+const PROGS = {
+  'I-IV-V':    [0, 5, 7, 7],
+  '12-bar':    [0,0,0,0, 5,5,0,0, 7,5,0,0],
+  'I-V-vi-IV': [0, 7, 9, 5],
+};
+
+class BackingTrack {
+  constructor() {
+    this.ctx = null;
+    this.noiseBuf = null;
+    this.bpm = 120;
+    this.groove = 'rock';
+    this.key = 'E';
+    this.prog = 'I-IV-V';
+    this.drumVol = 0.8;
+    this.bassVol = 0.6;
+    this.isRunning = false;
+    this.step = 0;
+    this.nextStepTime = 0;
+    this.timerID = null;
+    this.onBar = null;
+  }
+
+  _ctx() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const size = this.ctx.sampleRate * 2;
+      this.noiseBuf = this.ctx.createBuffer(1, size, this.ctx.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < size; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return this.ctx;
+  }
+
+  _kick(t) {
+    const ctx = this._ctx();
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(0.001, t + 0.35);
+    g.gain.setValueAtTime(this.drumVol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    osc.start(t); osc.stop(t + 0.35);
+  }
+
+  _snare(t) {
+    const ctx = this._ctx();
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuf;
+    const filt = ctx.createBiquadFilter(), ng = ctx.createGain();
+    filt.type = 'bandpass'; filt.frequency.value = 250; filt.Q.value = 0.8;
+    noise.connect(filt); filt.connect(ng); ng.connect(ctx.destination);
+    ng.gain.setValueAtTime(this.drumVol * 0.6, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    noise.start(t); noise.stop(t + 0.18);
+    const osc = ctx.createOscillator(), og = ctx.createGain();
+    osc.type = 'triangle'; osc.frequency.value = 180;
+    osc.connect(og); og.connect(ctx.destination);
+    og.gain.setValueAtTime(this.drumVol * 0.25, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.start(t); osc.stop(t + 0.08);
+  }
+
+  _hihat(t) {
+    const ctx = this._ctx();
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.noiseBuf;
+    const filt = ctx.createBiquadFilter(), g = ctx.createGain();
+    filt.type = 'highpass'; filt.frequency.value = 8000;
+    noise.connect(filt); filt.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(this.drumVol * 0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    noise.start(t); noise.stop(t + 0.05);
+  }
+
+  _bass(t, freq, dur) {
+    const ctx = this._ctx();
+    const osc = ctx.createOscillator(), filt = ctx.createBiquadFilter(), g = ctx.createGain();
+    osc.type = 'sawtooth'; osc.frequency.value = freq;
+    filt.type = 'lowpass'; filt.frequency.value = 350;
+    osc.connect(filt); filt.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(this.bassVol * 0.9, t);
+    g.gain.setValueAtTime(this.bassVol * 0.5, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur);
+  }
+
+  _schedule() {
+    const ctx = this._ctx();
+    const stepDur = 60 / this.bpm / 2;
+    const groove = GROOVES[this.groove];
+    const prog = PROGS[this.prog];
+
+    while (this.nextStepTime < ctx.currentTime + 0.12) {
+      const barStep = this.step % 8;
+      const bar = Math.floor(this.step / 8);
+      const semitones = prog[bar % prog.length];
+      const t = this.nextStepTime + (barStep % 2 === 1 ? groove.swing * stepDur : 0);
+
+      if (groove.kick[barStep])  this._kick(t);
+      if (groove.snare[barStep]) this._snare(t);
+      if (groove.hihat[barStep]) this._hihat(t);
+
+      if (barStep === 0) {
+        this._bass(t, rootFreq(this.key, semitones), stepDur * 7.5);
+        const label = chordLabel(this.key, semitones);
+        const delay = (t - ctx.currentTime) * 1000;
+        setTimeout(() => this.onBar && this.onBar(label), Math.max(0, delay));
+      }
+
+      this.nextStepTime += stepDur;
+      this.step++;
+    }
+    this.timerID = setTimeout(() => this._schedule(), 30);
+  }
+
+  start() {
+    const ctx = this._ctx();
+    if (ctx.state === 'suspended') ctx.resume();
+    this.isRunning = true;
+    this.step = 0;
+    this.nextStepTime = ctx.currentTime + 0.05;
+    this._schedule();
+  }
+
+  stop() {
+    this.isRunning = false;
+    clearTimeout(this.timerID);
+  }
+
+  toggle() {
+    this.isRunning ? this.stop() : this.start();
+    return this.isRunning;
+  }
+}
+
+// ── Backing track UI ──────────────────────────────────────────────────────────
+
+const bt = new BackingTrack();
+bt.onBar = name => { document.getElementById('bt-chord-now').textContent = name; };
+
+document.querySelectorAll('#bt-groove .seg').forEach(seg => {
+  seg.addEventListener('click', () => {
+    document.querySelectorAll('#bt-groove .seg').forEach(s => s.classList.remove('active'));
+    seg.classList.add('active');
+    bt.groove = seg.dataset.groove;
+  });
+});
+
+document.querySelectorAll('#bt-prog .seg').forEach(seg => {
+  seg.addEventListener('click', () => {
+    document.querySelectorAll('#bt-prog .seg').forEach(s => s.classList.remove('active'));
+    seg.classList.add('active');
+    bt.prog = seg.dataset.prog;
+  });
+});
+
+document.getElementById('bt-key').addEventListener('change', e => { bt.key = e.target.value; });
+
+const btBpmSlider = document.getElementById('bt-bpm-slider');
+const btBpmNumber = document.getElementById('bt-bpm-number');
+btBpmSlider.addEventListener('input', () => {
+  bt.bpm = +btBpmSlider.value;
+  btBpmNumber.textContent = btBpmSlider.value;
+});
+
+document.getElementById('drum-vol').addEventListener('input', e => { bt.drumVol = +e.target.value; });
+document.getElementById('bass-vol').addEventListener('input', e => { bt.bassVol = +e.target.value; });
+
+const btPlayBtn = document.getElementById('bt-play-btn');
+btPlayBtn.addEventListener('click', () => {
+  const running = bt.toggle();
+  btPlayBtn.textContent = running ? 'Stop' : 'Play';
+  btPlayBtn.classList.toggle('running', running);
+  if (!running) document.getElementById('bt-chord-now').textContent = '—';
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 renderChords();
