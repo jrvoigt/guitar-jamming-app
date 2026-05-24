@@ -31,43 +31,56 @@ const VOICINGS = {
   'B-m':   { frets:[-1,2,4,4,3,2], barre:{fret:2,from:1,to:5} },
 };
 
-// 8 eighth-note slots per bar.  swing: 0=straight, 0.38=blues shuffle
-// chordDur: guitar ring time in seconds
+// 8 eighth-note slots per bar.
+// swing: amount applied when shuffleOn is true
+// bass: [{step, note (semitones above root), vol? (0‑1 multiplier)}]
+// shuffleOn: current on/off state toggled by the UI
 const GROOVES = {
-  rock:   {
-    kick:  [1,0,0,0,1,0,0,0],
-    snare: [0,0,1,0,0,0,1,0],
-    hihat: [1,1,1,1,1,1,1,1],
-    guitar:[1,0,0,0,1,0,0,0],
-    swing: 0, chordDur: 1.4,
+  rock: {
+    kick:   [1,0,0,0,1,0,0,0],
+    snare:  [0,0,1,0,0,0,1,0],
+    hihat:  [1,1,1,1,1,1,1,1],
+    bass:   [{step:0,note:0},{step:4,note:7}],
+    guitar: [1,0,0,0,1,0,0,0],
+    swing: 0.33, chordDur: 1.4, shuffleOn: false,
   },
-  blues:  {
-    kick:  [1,0,0,0,0,0,1,0],
-    snare: [0,0,1,0,0,0,1,0],
-    hihat: [1,0,1,0,1,0,1,0],
-    guitar:[1,0,0,0,0,0,0,0],
-    swing: 0.38, chordDur: 3.0,
+  jazz: {
+    kick:   [1,0,0,0,0,0,1,0],
+    snare:  [0,0,0,0,1,0,0,0],
+    hihat:  [1,0,1,0,1,0,1,0],
+    // walking bass: root → 3rd → 5th → 7th each beat
+    bass:   [{step:0,note:0},{step:2,note:4},{step:4,note:7},{step:6,note:10}],
+    guitar: [0,0,1,0,0,0,1,0],  // comp on beats 2 and 4
+    swing: 0.33, chordDur: 0.8, shuffleOn: true,
   },
-  reggae: {
-    kick:  [0,0,0,0,1,0,0,0],
-    snare: [0,0,0,0,1,0,0,0],
-    hihat: [1,0,1,0,1,0,1,0],
-    guitar:[0,0,0,0,0,1,1,0],
-    swing: 0, chordDur: 0.13,
+  blues: {
+    kick:   [1,0,0,0,0,0,1,0],
+    snare:  [0,0,1,0,0,0,1,0],
+    hihat:  [1,0,1,0,1,0,1,0],
+    // classic blues bass: root – 5th – root – 6th
+    bass:   [{step:0,note:0},{step:2,note:7},{step:4,note:0},{step:6,note:9}],
+    guitar: [1,0,0,0,0,0,0,0],
+    swing: 0.38, chordDur: 3.0, shuffleOn: true,
   },
-  funk:   {
-    kick:  [1,0,0,1,1,0,0,0],
-    snare: [0,0,1,0,0,0,1,1],
-    hihat: [1,1,1,1,1,1,1,1],
-    guitar:[1,0,0,1,0,1,0,0],
-    swing: 0, chordDur: 0.28,
+  funk: {
+    kick:   [1,0,0,1,1,0,0,0],
+    snare:  [0,0,1,0,0,0,1,1],
+    hihat:  [1,1,1,1,1,1,1,1],
+    // syncopated funk bass with ghost note (step 1, low vol)
+    bass:   [{step:0,note:0},{step:1,note:0,vol:0.45},{step:3,note:7},{step:5,note:0}],
+    guitar: [1,0,0,1,0,1,0,0],
+    swing: 0.25, chordDur: 0.28, shuffleOn: false,
   },
 };
 
 const PROGS = {
-  'I-IV-V':    { offsets:[0,5,7],                        quality:['M','M','M'] },
-  '12-bar':    { offsets:[0,0,0,0,5,5,0,0,7,5,0,7],      quality:Array(12).fill('7') },
-  'I-V-vi-IV': { offsets:[0,7,9,5],                      quality:['M','M','m','M'] },
+  'I-IV-V':      { offsets:[0,5,7],                       quality:['M','M','M'] },
+  'I-V-vi-IV':   { offsets:[0,7,9,5],                     quality:['M','M','m','M'] },
+  'I-vi-IV-V':   { offsets:[0,9,5,7],                     quality:['M','m','M','M'] },
+  '12-bar':      { offsets:[0,0,0,0,5,5,0,0,7,5,0,7],     quality:Array(12).fill('7') },
+  'ii-V-I':      { offsets:[2,7,0],                       quality:['m','M','M'] },
+  'I-iii-vi-IV': { offsets:[0,4,9,5],                     quality:['M','m','m','M'] },
+  'vi-IV-I-V':   { offsets:[9,5,0,7],                     quality:['m','M','M','M'] },
 };
 
 // ── Audio context + master chain ──────────────────────────────
@@ -313,9 +326,10 @@ class BackingTrack {
     const step = this._step;
     const g    = GROOVES[this.groove];
 
-    // swing: odd steps stretched
+    // swing: odd steps stretched — only when the groove's shuffle is on
     const base = this._eighth();
-    const dur  = (step % 2 === 1 && g.swing > 0) ? base * (1 + g.swing) : base;
+    const activeSwing = g.shuffleOn ? g.swing : 0;
+    const dur  = (step % 2 === 1 && activeSwing > 0) ? base * (1 + activeSwing) : base;
 
     // Chord lookup
     const prog     = PROGS[this.prog];
@@ -331,10 +345,14 @@ class BackingTrack {
     if (g.snare[step]) snare(t, this.drumVol * 0.85);
     if (g.hihat[step]) hihat(t, this.drumVol * 0.5);
 
-    // Bass on kick hits and beat 1
-    if (g.kick[step] || step === 0) {
-      bass(t, rootFreq * 0.5, this.bassVol * 0.9, dur * 3);
-    }
+    // Bass arpeggio — each groove defines its own note pattern
+    g.bass.filter(b => b.step === step).forEach(b => {
+      let semi = b.note;
+      // adjust 3rd for chord quality (minor 3rd = 3 semitones, major = 4)
+      if (semi === 4 && quality === 'm') semi = 3;
+      const bFreq = rootFreq * 0.5 * Math.pow(2, semi / 12);
+      bass(t, bFreq, this.bassVol * 0.9 * (b.vol || 1), dur * 2.2);
+    });
 
     // Guitar chord
     if (g.guitar[step]) {
@@ -501,13 +519,18 @@ document.getElementById('key-select').addEventListener('change', e => {
 });
 
 // Progression
-document.querySelectorAll('#prog-ctrl .seg').forEach(btn =>
+document.getElementById('prog-select').addEventListener('change', e => {
+  bt.prog = e.target.value;
+  bt._barStep = 0;
+  updateChordDisplay();
+});
+
+// Shuffle toggles (one per style — stored on the GROOVES object directly)
+document.querySelectorAll('.shuffle-toggle').forEach(btn =>
   btn.addEventListener('click', () => {
-    document.querySelectorAll('#prog-ctrl .seg').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    bt.prog = btn.dataset.prog;
-    bt._barStep = 0;
-    updateChordDisplay();
+    const groove = btn.dataset.groove;
+    GROOVES[groove].shuffleOn = !GROOVES[groove].shuffleOn;
+    btn.classList.toggle('active', GROOVES[groove].shuffleOn);
   })
 );
 

@@ -120,9 +120,39 @@ main {
   border-color: var(--text-dim);
 }
 
-.four-wide .seg {
-  flex: 1;
+/* ── Groove grid with per-style shuffle row ── */
+
+.groove-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.groove-grid .seg {
   text-align: center;
+}
+
+.shuffle-toggle {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: center;
+}
+
+.shuffle-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.shuffle-toggle:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--text-dim);
 }
 
 /* ── Chord diagram row ── */
