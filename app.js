@@ -45,7 +45,7 @@ const GROOVES = {
   rock: {
     kick:   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],  // beats 1 & 3
     snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
-    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // 8th-note hihats
+    hihat:  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],  // 16th-note hihats
     bass:   [{step:0,note:0},{step:8,note:7}],
     guitar: [1,0,0,0,1,0,1,0,0,0,1,0,1,0,1,0],  // D _ D U _ U D U
     swing: 0.6, chordDur: 0.5, shuffleOn: false,
@@ -53,7 +53,7 @@ const GROOVES = {
   jazz: {
     kick:   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],  // beat 1
     snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
-    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // ride (8th, swung)
+    hihat:  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],  // 16th-note ride
     bass:   [{step:0,note:0},{step:4,note:4},{step:8,note:7},{step:12,note:10}],
     guitar: [0,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0],  // comp on 2 & 4 w/ embellish
     swing: 1.0, chordDur: 0.5, shuffleOn: true,
@@ -61,10 +61,10 @@ const GROOVES = {
   blues: {
     kick:   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],  // beats 1 & 3
     snare:  [0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0],  // beats 2 & 4
-    hihat:  [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],  // 8th-note (swung)
+    hihat:  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],  // 16th-note (swung)
     bass:   [{step:0,note:0},{step:4,note:7},{step:8,note:0},{step:12,note:9}],
     guitar: [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],  // one slow strum per bar
-    swing: 0.9, chordDur: 3.5, shuffleOn: true,
+    swing: 0.9, chordDur: 3.5, shuffleOn: false,
   },
   funk: {
     kick:   [1,0,0,1,0,0,1,0,0,0,1,0,0,1,0,0],  // syncopated
@@ -80,6 +80,7 @@ const PROGS = {
   'I-IV-V':      { offsets:[0,5,7],                       quality:['M','M','M'] },
   'I-V-vi-IV':   { offsets:[0,7,9,5],                     quality:['M','M','m','M'] },
   'I-vi-IV-V':   { offsets:[0,9,5,7],                     quality:['M','m','M','M'] },
+  '8-bar':       { offsets:[0,0,5,0,7,5,0,7],             quality:Array(8).fill('7') },
   '12-bar':      { offsets:[0,0,0,0,5,5,0,0,7,5,0,7],     quality:Array(12).fill('7') },
   'ii-V-I':      { offsets:[2,7,0],                       quality:['m','M','M'] },
   'I-iii-vi-IV': { offsets:[0,4,9,5],                     quality:['M','m','m','M'] },
@@ -549,12 +550,19 @@ document.querySelectorAll('#timesig-ctrl .seg').forEach(btn =>
   })
 );
 
-// Shuffle toggles
+// Shuffle toggles — radio-button style: only one groove can have shuffle on at a time
 document.querySelectorAll('.shuffle-toggle').forEach(btn =>
   btn.addEventListener('click', () => {
-    const groove = btn.dataset.groove;
-    GROOVES[groove].shuffleOn = !GROOVES[groove].shuffleOn;
-    btn.classList.toggle('active', GROOVES[groove].shuffleOn);
+    const groove  = btn.dataset.groove;
+    const wasOn   = GROOVES[groove].shuffleOn;
+    // Deactivate all shuffles
+    Object.keys(GROOVES).forEach(g => { GROOVES[g].shuffleOn = false; });
+    document.querySelectorAll('.shuffle-toggle').forEach(b => b.classList.remove('active'));
+    // If it was off, turn this one on; if it was already on, leave all off
+    if (!wasOn) {
+      GROOVES[groove].shuffleOn = true;
+      btn.classList.add('active');
+    }
   })
 );
 
