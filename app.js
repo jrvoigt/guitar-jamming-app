@@ -215,52 +215,51 @@ function bass(t, freq, vol, dur) {
   tri.start(t);  tri.stop(t + dur);
 }
 
-// ── Karplus-Strong guitar chord ───────────────────────────────
+// ── Karplus-Strong guitar chord (pre-computed) ────────────────
+// Computes the string synthesis in JS, stores result in an AudioBuffer,
+// then plays it back. Avoids unreliable Web Audio feedback-loop quirks.
 
 function ksChord(t, rootFreq, quality, dur, pan, vol) {
-  const intervals = quality === '7'
-    ? [0, 12, 4, 7, 10, 16]
-    : quality === 'm'
-    ? [0, 12, 3, 7, 15]
-    : [0, 12, 4, 7, 16];
-
-  const freqs = intervals.map(iv => rootFreq * Math.pow(2, iv / 12));
+  const semitones = quality === 'm' ? [0, 3, 7, 12, 15]
+    : quality === '7'               ? [0, 4, 7, 10, 12]
+    :                                 [0, 4, 7, 12, 16];
 
   const panner = ctx.createStereoPanner();
   panner.pan.value = pan;
   panner.connect(compressor);
-
   if (dur > 0.3) {
-    const rg = ctx.createGain(); rg.gain.value = vol * 0.28;
+    const rg = ctx.createGain(); rg.gain.value = 0.18;
     panner.connect(rg); rg.connect(reverbBus);
   }
 
-  freqs.forEach((freq, idx) => {
-    const st = t + idx * 0.011;
-    const sr = ctx.sampleRate;
-    const bufLen = Math.max(2, Math.round(sr / freq));
-    const ksBuf = ctx.createBuffer(1, bufLen, sr);
-    const ksData = ksBuf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) ksData[i] = Math.random() * 2 - 1;
+  const sr = ctx.sampleRate;
+  // decay < 1 controls how fast the string dies; 0.997 ≈ guitar sustain
+  const decay = 0.997;
+
+  semitones.forEach((semi, idx) => {
+    const freq   = rootFreq * Math.pow(2, semi / 12);
+    const strum  = t + idx * 0.013;
+    const period = Math.max(2, Math.round(sr / freq));
+    // compute just enough samples to cover the chord duration
+    const totalLen = Math.min(Math.ceil(sr * (dur + 0.4)), sr * 4);
+
+    const buf  = ctx.createBuffer(1, totalLen, sr);
+    const d    = buf.getChannelData(0);
+
+    // fill first period with noise (the "pluck")
+    for (let i = 0; i < period; i++) d[i] = Math.random() * 2 - 1;
+    // KS recursion: average consecutive delayed samples
+    for (let i = period; i < totalLen; i++) {
+      d[i] = decay * 0.5 * (d[i - period] + d[i - period + 1]);
+    }
 
     const src = ctx.createBufferSource();
-    src.buffer = ksBuf; src.loop = true;
-
-    const delay = ctx.createDelay();
-    delay.delayTime.value = 1 / freq;
-
-    const flt = ctx.createBiquadFilter();
-    flt.type = 'lowpass';
-    flt.frequency.value = Math.min(freq * 1.2 + 600, 8000);
-
-    const env = ctx.createGain();
-    env.gain.setValueAtTime(vol * 0.22, st);
-    env.gain.setTargetAtTime(0.001, st + dur * 0.25, dur * 0.22);
-
-    src.connect(delay); delay.connect(flt);
-    flt.connect(delay); // feedback
-    flt.connect(env); env.connect(panner);
-    src.start(st); src.stop(st + dur + 0.2);
+    src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = vol * 0.22;
+    src.connect(g); g.connect(panner);
+    src.start(strum);
+    src.stop(strum + dur + 0.4);
   });
 }
 
