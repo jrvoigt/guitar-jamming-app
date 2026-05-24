@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guitar Jamming App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>Guitar Jamming</h1>
+      <nav class="tabs">
+        <button class="tab active" data-tab="chords">Chords</button>
+        <button class="tab" data-tab="metronome">Metronome</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section id="chords" class="panel active">
+      <div class="filter-bar">
+        <button class="filter active" data-filter="all">All</button>
+        <button class="filter" data-filter="major">Major</button>
+        <button class="filter" data-filter="minor">Minor</button>
+      </div>
+      <div id="chord-grid" class="chord-grid"></div>
+    </section>
+
+    <section id="metronome" class="panel">
+      <div class="metro-wrap">
+        <div class="bpm-display">
+          <span id="bpm-number">120</span>
+          <span class="bpm-unit">BPM</span>
+        </div>
+
+        <input class="bpm-slider" type="range" id="bpm-slider" min="40" max="240" value="120">
+
+        <div class="beat-row" id="beat-row"></div>
+
+        <div class="metro-buttons">
+          <button class="btn-secondary" id="tap-btn">Tap Tempo</button>
+          <button class="btn-primary" id="start-btn">Start</button>
+        </div>
+
+        <div class="time-sig-row">
+          <span>Time signature</span>
+          <div class="seg-control" id="time-sig">
+            <button class="seg active" data-beats="4">4/4</button>
+            <button class="seg" data-beats="3">3/4</button>
+            <button class="seg" data-beats="2">2/4</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
